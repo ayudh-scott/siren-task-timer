@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Search, Calendar, Clock, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Calendar, Clock, Trash2, ChevronDown, ChevronUp, Edit2, Save, X } from 'lucide-react';
 import { storage, Task, formatDuration, formatDate, calculateDailyTotal, getTodayString } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 
@@ -12,6 +12,8 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Task>>({});
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
@@ -45,6 +47,120 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
     if (confirm('Delete this task?')) {
       await storage.deleteTask(id);
       onRefresh();
+    }
+  };
+
+  const handleEdit = (task: Task) => {
+    setEditForm({
+      taskName: task.taskName,
+      notes: task.notes,
+      date: task.date,
+      startTime: task.startTime,
+      endTime: task.endTime,
+      duration: task.duration,
+    });
+    setEditingId(task.id);
+    setExpandedId(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditForm({});
+  };
+
+  const calculateDurationFromTimes = (date: string, startTime: string, endTime: string): number => {
+    try {
+      // Parse times (format: "10:30 AM" or "02:15 PM")
+      const parseTime = (timeStr: string) => {
+        const [time, period] = timeStr.split(' ');
+        const [hours, minutes] = time.split(':').map(Number);
+        let hour24 = hours;
+        if (period === 'PM' && hours !== 12) hour24 = hours + 12;
+        if (period === 'AM' && hours === 12) hour24 = 0;
+        return { hours: hour24, minutes };
+      };
+
+      const start = parseTime(startTime);
+      const end = parseTime(endTime);
+      
+      const startDate = new Date(`${date}T${String(start.hours).padStart(2, '0')}:${String(start.minutes).padStart(2, '0')}:00`);
+      let endDate = new Date(`${date}T${String(end.hours).padStart(2, '0')}:${String(end.minutes).padStart(2, '0')}:00`);
+      
+      // Handle case where end time is next day
+      if (endDate < startDate) {
+        endDate.setDate(endDate.getDate() + 1);
+      }
+      
+      return Math.floor((endDate.getTime() - startDate.getTime()) / 1000);
+    } catch {
+      return 0;
+    }
+  };
+
+  const handleSaveEdit = async (id: string) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    let updates: Partial<Task> = { ...editForm };
+
+    // Recalculate duration if times changed
+    if (updates.startTime && updates.endTime && updates.date) {
+      const newDuration = calculateDurationFromTimes(
+        updates.date,
+        updates.startTime,
+        updates.endTime
+      );
+      if (newDuration > 0) {
+        updates.duration = newDuration;
+      }
+    }
+
+    await storage.updateTask(id, updates);
+    setEditingId(null);
+    setEditForm({});
+    onRefresh();
+  };
+
+  const handleTimeChange = (field: 'startTime' | 'endTime', value: string) => {
+    setEditForm(prev => {
+      const updated = { ...prev, [field]: value };
+      // Auto-calculate duration if both times are set
+      if (updated.startTime && updated.endTime && updated.date) {
+        const newDuration = calculateDurationFromTimes(
+          updated.date,
+          updated.startTime,
+          updated.endTime
+        );
+        if (newDuration > 0) {
+          updated.duration = newDuration;
+        }
+      }
+      return updated;
+    });
+  };
+
+  // Helper functions to convert between 12-hour and 24-hour format
+  const convertTo24Hour = (time12: string): string => {
+    try {
+      const [time, period] = time12.split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) hour24 = hours + 12;
+      if (period === 'AM' && hours === 12) hour24 = 0;
+      return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    } catch {
+      return '00:00';
+    }
+  };
+
+  const convertTo12Hour = (time24: string): string => {
+    try {
+      const [hours, minutes] = time24.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hour12 = hours % 12 || 12;
+      return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
+    } catch {
+      return '12:00 AM';
     }
   };
 
@@ -164,21 +280,155 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
                     {/* Expanded Content */}
                     {expandedId === task.id && (
                       <div className="mt-4 pt-4 border-t border-border animate-fade-in">
-                        {task.notes && (
-                          <p className="text-sm text-muted-foreground mb-4">
-                            {task.notes}
-                          </p>
+                        {editingId === task.id ? (
+                          /* Edit Form */
+                          <div className="space-y-4" onClick={(e) => e.stopPropagation()}>
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">Task Name</label>
+                              <input
+                                type="text"
+                                value={editForm.taskName || ''}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, taskName: e.target.value }))}
+                                className="input-field w-full"
+                                placeholder="Task name"
+                              />
+                            </div>
+                            
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">Date</label>
+                              <input
+                                type="date"
+                                value={editForm.date || ''}
+                                onChange={(e) => {
+                                  const newDate = e.target.value;
+                                  setEditForm(prev => {
+                                    const updated = { ...prev, date: newDate };
+                                    // Recalculate duration if times are set
+                                    if (updated.startTime && updated.endTime && newDate) {
+                                      const newDuration = calculateDurationFromTimes(
+                                        newDate,
+                                        updated.startTime,
+                                        updated.endTime
+                                      );
+                                      if (newDuration > 0) {
+                                        updated.duration = newDuration;
+                                      }
+                                    }
+                                    return updated;
+                                  });
+                                }}
+                                className="input-field w-full"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs text-muted-foreground mb-1 block">Start Time</label>
+                                <input
+                                  type="time"
+                                  value={editForm.startTime ? convertTo24Hour(editForm.startTime) : ''}
+                                  onChange={(e) => {
+                                    const time24 = e.target.value;
+                                    const time12 = convertTo12Hour(time24);
+                                    handleTimeChange('startTime', time12);
+                                  }}
+                                  className="input-field w-full"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground mb-1 block">End Time</label>
+                                <input
+                                  type="time"
+                                  value={editForm.endTime ? convertTo24Hour(editForm.endTime) : ''}
+                                  onChange={(e) => {
+                                    const time24 = e.target.value;
+                                    const time12 = convertTo12Hour(time24);
+                                    handleTimeChange('endTime', time12);
+                                  }}
+                                  className="input-field w-full"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">
+                                Duration: {formatDuration(editForm.duration || task.duration)}
+                              </label>
+                              <input
+                                type="number"
+                                value={Math.floor((editForm.duration || task.duration) / 60)}
+                                onChange={(e) => {
+                                  const minutes = parseInt(e.target.value) || 0;
+                                  setEditForm(prev => ({ ...prev, duration: minutes * 60 }));
+                                }}
+                                className="input-field w-full"
+                                placeholder="Duration in minutes"
+                                min="0"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Or adjust start/end times above to auto-calculate
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
+                              <textarea
+                                value={editForm.notes || ''}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                                className="input-field w-full resize-none h-20"
+                                placeholder="Notes (optional)"
+                              />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                onClick={() => handleSaveEdit(task.id)}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
+                              >
+                                <Save size={16} />
+                                Save
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-xl hover:bg-muted/80 transition-colors"
+                              >
+                                <X size={16} />
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* View Mode */
+                          <>
+                            {task.notes && (
+                              <p className="text-sm text-muted-foreground mb-4">
+                                {task.notes}
+                              </p>
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEdit(task);
+                                }}
+                                className="flex items-center gap-2 text-sm text-primary hover:text-primary/80 transition-colors"
+                              >
+                                <Edit2 size={16} />
+                                Edit task
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(task.id);
+                                }}
+                                className="flex items-center gap-2 text-sm text-destructive hover:text-destructive/80 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                                Delete task
+                              </button>
+                            </div>
+                          </>
                         )}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(task.id);
-                          }}
-                          className="flex items-center gap-2 text-sm text-destructive hover:text-destructive/80 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                          Delete task
-                        </button>
                       </div>
                     )}
                   </div>

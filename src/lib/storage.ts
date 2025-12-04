@@ -63,32 +63,66 @@ export const storage = {
   // Tasks
   getTasks: async (): Promise<Task[]> => {
     try {
-      console.log('Fetching tasks from Supabase...');
+      console.log('🔍 Fetching tasks from Supabase...');
+      console.log('Supabase URL:', import.meta.env.VITE_SUPABASE_URL);
+      
       const { data, error } = await (supabase
         .from('tasks' as any)
         .select('*')
         .order('created_at', { ascending: false }) as any);
 
       if (error) {
-        console.error('Error fetching tasks:', error);
+        console.error('❌ Error fetching tasks:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
         console.error('Error details:', JSON.stringify(error, null, 2));
         // Fallback to localStorage if Supabase fails
+        console.warn('Falling back to localStorage');
         try {
           const localData = localStorage.getItem(TASKS_KEY);
-          return localData ? JSON.parse(localData) : [];
+          const localTasks = localData ? JSON.parse(localData) : [];
+          console.log('📦 Loaded', localTasks.length, 'tasks from localStorage');
+          return localTasks;
         } catch {
           return [];
         }
       }
 
-      console.log('Fetched tasks from Supabase:', data?.length || 0, 'tasks');
-      return data ? data.map(dbRowToTask) : [];
-    } catch (error) {
-      console.error('Error in getTasks:', error);
+      console.log('✅ Fetched', data?.length || 0, 'tasks from Supabase');
+      const tasks = data ? data.map(dbRowToTask) : [];
+      
+      // Also merge with localStorage tasks (in case some were saved there)
+      try {
+        const localData = localStorage.getItem(TASKS_KEY);
+        const localTasks = localData ? JSON.parse(localData) : [];
+        if (localTasks.length > 0) {
+          console.log('📦 Found', localTasks.length, 'tasks in localStorage, merging...');
+          // Merge and deduplicate by id
+          const taskMap = new Map<string, Task>();
+          tasks.forEach(t => taskMap.set(t.id, t));
+          localTasks.forEach((t: Task) => {
+            if (!taskMap.has(t.id)) {
+              taskMap.set(t.id, t);
+              // Try to save this localStorage task to Supabase
+              storage.saveTask(t).catch(err => console.warn('Failed to sync task', t.id, err));
+            }
+          });
+          return Array.from(taskMap.values()).sort((a, b) => b.createdAt - a.createdAt);
+        }
+      } catch (e) {
+        console.warn('Error merging localStorage tasks:', e);
+      }
+      
+      return tasks;
+    } catch (error: any) {
+      console.error('❌ Exception in getTasks:', error);
+      console.error('Exception details:', error?.message, error?.stack);
       // Fallback to localStorage
       try {
         const localData = localStorage.getItem(TASKS_KEY);
-        return localData ? JSON.parse(localData) : [];
+        const localTasks = localData ? JSON.parse(localData) : [];
+        console.log('📦 Loaded', localTasks.length, 'tasks from localStorage (fallback)');
+        return localTasks;
       } catch {
         return [];
       }
@@ -96,29 +130,44 @@ export const storage = {
   },
 
   saveTask: async (task: Task): Promise<void> => {
+    // Always save to localStorage first (for immediate UI update)
+    const tasks = storage.getTasksSync();
+    tasks.unshift(task);
+    localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    
+    // Then try to save to Supabase
     try {
       const dbRow = taskToDbRow(task);
-      console.log('Saving task to Supabase:', dbRow);
+      console.log('💾 Saving task to Supabase:', {
+        id: task.id,
+        taskName: task.taskName,
+        date: task.date,
+        duration: task.duration
+      });
+      
+      // Check if Supabase is configured
+      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
+        console.warn('⚠️ Supabase not configured - using localStorage only');
+        return;
+      }
+      
       const { data, error } = await (supabase
         .from('tasks' as any)
         .insert([dbRow] as any) as any);
 
       if (error) {
-        console.error('Error saving task to Supabase:', error);
+        console.error('❌ Error saving task to Supabase:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
         console.error('Error details:', JSON.stringify(error, null, 2));
-        // Fallback to localStorage
-        const tasks = storage.getTasksSync();
-        tasks.unshift(task);
-        localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+        // Task is already in localStorage, so it's safe
       } else {
-        console.log('Task saved successfully to Supabase:', data);
+        console.log('✅ Task saved successfully to Supabase!', data);
       }
-    } catch (error) {
-      console.error('Error in saveTask:', error);
-      // Fallback to localStorage
-      const tasks = storage.getTasksSync();
-      tasks.unshift(task);
-      localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    } catch (error: any) {
+      console.error('❌ Exception in saveTask:', error);
+      console.error('Exception details:', error?.message, error?.stack);
+      // Task is already in localStorage, so it's safe
     }
   },
 

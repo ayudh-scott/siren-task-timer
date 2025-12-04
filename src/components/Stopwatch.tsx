@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Play, Square, RotateCcw, Bell, BellOff, Volume2, VolumeX } from 'lucide-react';
+import { Play, Square, RotateCcw, Bell, BellOff, Volume2, VolumeX, Calendar, Clock } from 'lucide-react';
 import { useTimer } from '@/hooks/useTimer';
-import { formatDuration, storage } from '@/lib/storage';
+import { formatDuration, storage, getTodayString } from '@/lib/storage';
 import { notificationService } from '@/lib/notifications';
 import { sirenService } from '@/lib/siren';
 import { cn } from '@/lib/utils';
@@ -16,8 +16,14 @@ export const Stopwatch = ({ onTaskSaved }: StopwatchProps) => {
     elapsedSeconds,
     taskName,
     taskNotes,
+    taskDate,
+    startTime,
+    endTime,
     setTaskName,
     setTaskNotes,
+    setTaskDate,
+    setStartTime,
+    setEndTime,
     start,
     stop,
     reset,
@@ -27,6 +33,7 @@ export const Stopwatch = ({ onTaskSaved }: StopwatchProps) => {
   const [soundEnabled, setSoundEnabled] = useState(storage.getSoundEnabled());
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showCustomTime, setShowCustomTime] = useState(false);
 
   useEffect(() => {
     setNotificationsEnabled(notificationService.isPermissionGranted());
@@ -44,10 +51,41 @@ export const Stopwatch = ({ onTaskSaved }: StopwatchProps) => {
       // Reset task fields for next task
       setTaskName('');
       setTaskNotes('');
+      setTaskDate(getTodayString());
+      setStartTime('');
+      setEndTime('');
+      setShowCustomTime(false);
       // Trigger refresh of task list
       if (onTaskSaved) {
         onTaskSaved();
       }
+    }
+  };
+
+  // Helper functions to convert between 12-hour and 24-hour format
+  const convertTo24Hour = (time12: string): string => {
+    if (!time12) return '';
+    try {
+      const [time, period] = time12.split(' ');
+      const [hours, minutes] = time.split(':').map(Number);
+      let hour24 = hours;
+      if (period === 'PM' && hours !== 12) hour24 = hours + 12;
+      if (period === 'AM' && hours === 12) hour24 = 0;
+      return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    } catch {
+      return '';
+    }
+  };
+
+  const convertTo12Hour = (time24: string): string => {
+    if (!time24) return '';
+    try {
+      const [hours, minutes] = time24.split(':').map(Number);
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const hour12 = hours % 12 || 12;
+      return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
+    } catch {
+      return '';
     }
   };
 
@@ -163,6 +201,91 @@ export const Stopwatch = ({ onTaskSaved }: StopwatchProps) => {
           className="input-field text-center resize-none h-20"
           disabled={isRunning}
         />
+
+        {/* Custom Date/Time Section */}
+        {!isRunning && (
+          <div className="space-y-3">
+            <button
+              onClick={() => setShowCustomTime(!showCustomTime)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Calendar size={16} />
+              {showCustomTime ? 'Hide' : 'Set'} custom date & time
+            </button>
+
+            {showCustomTime && (
+              <div className="glass rounded-2xl p-4 space-y-3 animate-fade-in">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
+                    <Calendar size={12} />
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={taskDate}
+                    onChange={(e) => setTaskDate(e.target.value)}
+                    className="input-field w-full"
+                    max={getTodayString()}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
+                      <Clock size={12} />
+                      Start Time
+                    </label>
+                    <input
+                      type="time"
+                      value={startTime ? convertTo24Hour(startTime) : ''}
+                      onChange={(e) => {
+                        const time12 = convertTo12Hour(e.target.value);
+                        setStartTime(time12);
+                      }}
+                      className="input-field w-full"
+                      placeholder="Start time"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block flex items-center gap-1">
+                      <Clock size={12} />
+                      End Time
+                    </label>
+                    <input
+                      type="time"
+                      value={endTime ? convertTo24Hour(endTime) : ''}
+                      onChange={(e) => {
+                        const time12 = convertTo12Hour(e.target.value);
+                        setEndTime(time12);
+                      }}
+                      className="input-field w-full"
+                      placeholder="End time"
+                    />
+                  </div>
+                </div>
+
+                {startTime && endTime && taskDate && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    Duration will be calculated from the times above
+                  </p>
+                )}
+
+                {(startTime || endTime) && (
+                  <button
+                    onClick={() => {
+                      setStartTime('');
+                      setEndTime('');
+                      setTaskDate(getTodayString());
+                    }}
+                    className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Clear custom times
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Control Buttons */}
