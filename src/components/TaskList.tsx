@@ -45,8 +45,14 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
 
   const handleDelete = async (id: string) => {
     if (confirm('Delete this task?')) {
-      await storage.deleteTask(id);
-      onRefresh();
+      try {
+        console.log('Deleting task:', id);
+        await storage.deleteTask(id);
+        await onRefresh();
+      } catch (error) {
+        console.error('Error deleting task:', error);
+        alert('Failed to delete task. Please try again.');
+      }
     }
   };
 
@@ -98,27 +104,36 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
   };
 
   const handleSaveEdit = async (id: string) => {
-    const task = tasks.find(t => t.id === id);
-    if (!task) return;
-
-    let updates: Partial<Task> = { ...editForm };
-
-    // Recalculate duration if times changed
-    if (updates.startTime && updates.endTime && updates.date) {
-      const newDuration = calculateDurationFromTimes(
-        updates.date,
-        updates.startTime,
-        updates.endTime
-      );
-      if (newDuration > 0) {
-        updates.duration = newDuration;
+    try {
+      const task = tasks.find(t => t.id === id);
+      if (!task) {
+        console.error('Task not found:', id);
+        return;
       }
-    }
 
-    await storage.updateTask(id, updates);
-    setEditingId(null);
-    setEditForm({});
-    onRefresh();
+      let updates: Partial<Task> = { ...editForm };
+
+      // Recalculate duration if times changed
+      if (updates.startTime && updates.endTime && updates.date) {
+        const newDuration = calculateDurationFromTimes(
+          updates.date,
+          updates.startTime,
+          updates.endTime
+        );
+        if (newDuration > 0) {
+          updates.duration = newDuration;
+        }
+      }
+
+      console.log('Updating task:', id, updates);
+      await storage.updateTask(id, updates);
+      setEditingId(null);
+      setEditForm({});
+      await onRefresh();
+    } catch (error) {
+      console.error('Error saving task:', error);
+      alert('Failed to save task. Please try again.');
+    }
   };
 
   const handleTimeChange = (field: 'startTime' | 'endTime', value: string) => {
@@ -141,26 +156,59 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
 
   // Helper functions to convert between 12-hour and 24-hour format
   const convertTo24Hour = (time12: string): string => {
+    if (!time12) return '';
     try {
-      const [time, period] = time12.split(' ');
-      const [hours, minutes] = time.split(':').map(Number);
+      // Check if already in 24-hour format (no AM/PM)
+      if (!time12.includes('AM') && !time12.includes('PM')) {
+        return time12.length === 5 ? time12 : '';
+      }
+      
+      const parts = time12.split(' ');
+      if (parts.length < 2) return '';
+      
+      const [time, period] = parts;
+      if (!time || !period) return '';
+      
+      const timeParts = time.split(':');
+      if (timeParts.length < 2) return '';
+      
+      const hours = parseInt(timeParts[0], 10);
+      const minutes = parseInt(timeParts[1], 10);
+      
+      if (isNaN(hours) || isNaN(minutes)) return '';
+      
       let hour24 = hours;
       if (period === 'PM' && hours !== 12) hour24 = hours + 12;
       if (period === 'AM' && hours === 12) hour24 = 0;
       return `${String(hour24).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-    } catch {
-      return '00:00';
+    } catch (error) {
+      console.error('Error converting to 24-hour:', time12, error);
+      return '';
     }
   };
 
   const convertTo12Hour = (time24: string): string => {
+    if (!time24) return '';
     try {
-      const [hours, minutes] = time24.split(':').map(Number);
+      // Check if already in 12-hour format (has AM/PM)
+      if (time24.includes('AM') || time24.includes('PM')) {
+        return time24;
+      }
+      
+      const timeParts = time24.split(':');
+      if (timeParts.length < 2) return '';
+      
+      const hours = parseInt(timeParts[0], 10);
+      const minutes = parseInt(timeParts[1], 10);
+      
+      if (isNaN(hours) || isNaN(minutes)) return '';
+      
       const period = hours >= 12 ? 'PM' : 'AM';
       const hour12 = hours % 12 || 12;
       return `${hour12}:${String(minutes).padStart(2, '0')} ${period}`;
-    } catch {
-      return '12:00 AM';
+    } catch (error) {
+      console.error('Error converting to 12-hour:', time24, error);
+      return '';
     }
   };
 
@@ -288,7 +336,11 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
                               <input
                                 type="text"
                                 value={editForm.taskName || ''}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, taskName: e.target.value }))}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setEditForm(prev => ({ ...prev, taskName: e.target.value }));
+                                }}
+                                onClick={(e) => e.stopPropagation()}
                                 className="input-field w-full"
                                 placeholder="Task name"
                               />
@@ -300,6 +352,7 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
                                 type="date"
                                 value={editForm.date || ''}
                                 onChange={(e) => {
+                                  e.stopPropagation();
                                   const newDate = e.target.value;
                                   setEditForm(prev => {
                                     const updated = { ...prev, date: newDate };
@@ -317,6 +370,7 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
                                     return updated;
                                   });
                                 }}
+                                onClick={(e) => e.stopPropagation()}
                                 className="input-field w-full"
                               />
                             </div>
@@ -358,9 +412,11 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
                                 type="number"
                                 value={Math.floor((editForm.duration || task.duration) / 60)}
                                 onChange={(e) => {
+                                  e.stopPropagation();
                                   const minutes = parseInt(e.target.value) || 0;
                                   setEditForm(prev => ({ ...prev, duration: minutes * 60 }));
                                 }}
+                                onClick={(e) => e.stopPropagation()}
                                 className="input-field w-full"
                                 placeholder="Duration in minutes"
                                 min="0"
@@ -374,7 +430,11 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
                               <label className="text-xs text-muted-foreground mb-1 block">Notes</label>
                               <textarea
                                 value={editForm.notes || ''}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setEditForm(prev => ({ ...prev, notes: e.target.value }));
+                                }}
+                                onClick={(e) => e.stopPropagation()}
                                 className="input-field w-full resize-none h-20"
                                 placeholder="Notes (optional)"
                               />
@@ -382,14 +442,20 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
 
                             <div className="flex gap-2 pt-2">
                               <button
-                                onClick={() => handleSaveEdit(task.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSaveEdit(task.id);
+                                }}
                                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-colors"
                               >
                                 <Save size={16} />
                                 Save
                               </button>
                               <button
-                                onClick={handleCancelEdit}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCancelEdit();
+                                }}
                                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-muted text-muted-foreground rounded-xl hover:bg-muted/80 transition-colors"
                               >
                                 <X size={16} />

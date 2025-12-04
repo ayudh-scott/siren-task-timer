@@ -182,6 +182,15 @@ export const storage = {
   },
 
   updateTask: async (id: string, updates: Partial<Task>): Promise<void> => {
+    // Always update localStorage first (for immediate UI update)
+    const tasks = storage.getTasksSync();
+    const index = tasks.findIndex(t => t.id === id);
+    if (index !== -1) {
+      tasks[index] = { ...tasks[index], ...updates };
+      localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    }
+
+    // Then try to update in Supabase
     try {
       const dbUpdates: any = {};
       if (updates.taskName !== undefined) dbUpdates.task_name = updates.taskName;
@@ -192,49 +201,58 @@ export const storage = {
       if (updates.date !== undefined) dbUpdates.date = updates.date;
       if (updates.createdAt !== undefined) dbUpdates.created_at = updates.createdAt;
 
+      // Check if Supabase is configured
+      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
+        console.warn('⚠️ Supabase not configured - using localStorage only');
+        return;
+      }
+
       const query = supabase.from('tasks' as any) as any;
       const { error } = await query.update(dbUpdates as any).eq('id', id);
 
       if (error) {
-        console.error('Error updating task in Supabase:', error);
-        // Fallback to localStorage
-        const tasks = storage.getTasksSync();
-        const index = tasks.findIndex(t => t.id === id);
-        if (index !== -1) {
-          tasks[index] = { ...tasks[index], ...updates };
-          localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-        }
+        console.error('❌ Error updating task in Supabase:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        // Task is already updated in localStorage, so it's safe
+      } else {
+        console.log('✅ Task updated successfully in Supabase!');
       }
-    } catch (error) {
-      console.error('Error in updateTask:', error);
-      // Fallback to localStorage
-      const tasks = storage.getTasksSync();
-      const index = tasks.findIndex(t => t.id === id);
-      if (index !== -1) {
-        tasks[index] = { ...tasks[index], ...updates };
-        localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
-      }
+    } catch (error: any) {
+      console.error('❌ Exception in updateTask:', error);
+      console.error('Exception details:', error?.message, error?.stack);
+      // Task is already updated in localStorage, so it's safe
     }
   },
 
   deleteTask: async (id: string): Promise<void> => {
+    // Always delete from localStorage first (for immediate UI update)
+    const tasks = storage.getTasksSync().filter(t => t.id !== id);
+    localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+
+    // Then try to delete from Supabase
     try {
+      // Check if Supabase is configured
+      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
+        console.warn('⚠️ Supabase not configured - using localStorage only');
+        return;
+      }
+
       const { error } = await (supabase
         .from('tasks' as any)
         .delete()
         .eq('id', id) as any);
 
       if (error) {
-        console.error('Error deleting task from Supabase:', error);
-        // Fallback to localStorage
-        const tasks = storage.getTasksSync().filter(t => t.id !== id);
-        localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+        console.error('❌ Error deleting task from Supabase:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        // Task is already deleted from localStorage, so it's safe
+      } else {
+        console.log('✅ Task deleted successfully from Supabase!');
       }
-    } catch (error) {
-      console.error('Error in deleteTask:', error);
-      // Fallback to localStorage
-      const tasks = storage.getTasksSync().filter(t => t.id !== id);
-      localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+    } catch (error: any) {
+      console.error('❌ Exception in deleteTask:', error);
+      console.error('Exception details:', error?.message, error?.stack);
+      // Task is already deleted from localStorage, so it's safe
     }
   },
 
