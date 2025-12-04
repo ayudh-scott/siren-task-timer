@@ -11,8 +11,14 @@ export interface UseTimerReturn {
   elapsedSeconds: number;
   taskName: string;
   taskNotes: string;
+  taskDate: string;
+  startTime: string;
+  endTime: string;
   setTaskName: (name: string) => void;
   setTaskNotes: (notes: string) => void;
+  setTaskDate: (date: string) => void;
+  setStartTime: (time: string) => void;
+  setEndTime: (time: string) => void;
   start: () => void;
   stop: () => Promise<Task | null>;
   reset: () => void;
@@ -24,6 +30,9 @@ export const useTimer = (): UseTimerReturn => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [taskName, setTaskName] = useState('');
   const [taskNotes, setTaskNotes] = useState('');
+  const [taskDate, setTaskDate] = useState(getTodayString());
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
   const [startTimestamp, setStartTimestamp] = useState<number | null>(null);
   const [lastAlertMinutes, setLastAlertMinutes] = useState(0);
   
@@ -107,17 +116,62 @@ export const useTimer = (): UseTimerReturn => {
   const stop = useCallback(async (): Promise<Task | null> => {
     if (!isRunning) return null;
 
-    const endTime = new Date();
-    const startTime = startTimestamp ? new Date(startTimestamp) : endTime;
+    // Use custom times if provided, otherwise use current time
+    let finalStartTime: string;
+    let finalEndTime: string;
+    let finalDate: string;
+    let finalDuration: number;
+
+    if (startTime && endTime && taskDate) {
+      // Use custom date and times
+      finalDate = taskDate;
+      finalStartTime = startTime;
+      finalEndTime = endTime;
+      
+      // Calculate duration from custom times
+      try {
+        const parseTime = (timeStr: string) => {
+          const [time, period] = timeStr.split(' ');
+          const [hours, minutes] = time.split(':').map(Number);
+          let hour24 = hours;
+          if (period === 'PM' && hours !== 12) hour24 = hours + 12;
+          if (period === 'AM' && hours === 12) hour24 = 0;
+          return { hours: hour24, minutes };
+        };
+
+        const start = parseTime(startTime);
+        const end = parseTime(endTime);
+        
+        const startDate = new Date(`${taskDate}T${String(start.hours).padStart(2, '0')}:${String(start.minutes).padStart(2, '0')}:00`);
+        let endDate = new Date(`${taskDate}T${String(end.hours).padStart(2, '0')}:${String(end.minutes).padStart(2, '0')}:00`);
+        
+        // Handle case where end time is next day
+        if (endDate < startDate) {
+          endDate.setDate(endDate.getDate() + 1);
+        }
+        
+        finalDuration = Math.floor((endDate.getTime() - startDate.getTime()) / 1000);
+      } catch {
+        finalDuration = elapsedSeconds;
+      }
+    } else {
+      // Use actual timer times
+      const endTimeDate = new Date();
+      const startTimeDate = startTimestamp ? new Date(startTimestamp) : endTimeDate;
+      finalDate = getTodayString();
+      finalStartTime = formatTime(startTimeDate);
+      finalEndTime = formatTime(endTimeDate);
+      finalDuration = elapsedSeconds;
+    }
     
     const task: Task = {
       id: generateId(),
-      date: getTodayString(),
+      date: finalDate,
       taskName: taskName || 'Untitled Task',
       notes: taskNotes,
-      startTime: formatTime(startTime),
-      endTime: formatTime(endTime),
-      duration: elapsedSeconds,
+      startTime: finalStartTime,
+      endTime: finalEndTime,
+      duration: finalDuration,
       createdAt: Date.now()
     };
 
@@ -131,7 +185,7 @@ export const useTimer = (): UseTimerReturn => {
     notificationService.showTimerStopped(task.taskName, formatDuration(task.duration));
 
     return task;
-  }, [isRunning, startTimestamp, taskName, taskNotes, elapsedSeconds]);
+  }, [isRunning, startTimestamp, taskName, taskNotes, elapsedSeconds, startTime, endTime, taskDate]);
 
   const reset = useCallback(() => {
     setIsRunning(false);
@@ -139,6 +193,9 @@ export const useTimer = (): UseTimerReturn => {
     setElapsedSeconds(0);
     setTaskName('');
     setTaskNotes('');
+    setTaskDate(getTodayString());
+    setStartTime('');
+    setEndTime('');
     lastAlertRef.current = 0;
     setLastAlertMinutes(0);
     storage.clearTimerState();
@@ -149,8 +206,14 @@ export const useTimer = (): UseTimerReturn => {
     elapsedSeconds,
     taskName,
     taskNotes,
+    taskDate,
+    startTime,
+    endTime,
     setTaskName,
     setTaskNotes,
+    setTaskDate,
+    setStartTime,
+    setEndTime,
     start,
     stop,
     reset,
