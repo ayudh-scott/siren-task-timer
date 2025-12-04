@@ -12,8 +12,9 @@ const Index = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
 
-  const refreshTasks = useCallback(() => {
-    setTasks(storage.getTasks());
+  const refreshTasks = useCallback(async () => {
+    const tasks = await storage.getTasks();
+    setTasks(tasks);
   }, []);
 
   useEffect(() => {
@@ -28,7 +29,7 @@ const Index = () => {
       refreshTasks();
       const state = storage.getTimerState();
       setIsTimerRunning(state.isRunning);
-    }, 1000);
+    }, 5000); // Reduced frequency since we're fetching from database
 
     return () => clearInterval(interval);
   }, [refreshTasks]);
@@ -47,7 +48,7 @@ const Index = () => {
       <div className="min-h-screen bg-background">
         {/* Tab Content */}
         <main className="pb-20">
-          {activeTab === 'timer' && <Stopwatch />}
+          {activeTab === 'timer' && <Stopwatch onTaskSaved={refreshTasks} />}
           {activeTab === 'dashboard' && <Dashboard tasks={tasks} />}
           {activeTab === 'tasks' && (
             <TaskList tasks={tasks} onRefresh={refreshTasks} />

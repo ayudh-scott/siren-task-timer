@@ -41,9 +41,9 @@ export const TaskList = ({ tasks, onRefresh }: TaskListProps) => {
     new Date(b).getTime() - new Date(a).getTime()
   );
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this task?')) {
-      storage.deleteTask(id);
+      await storage.deleteTask(id);
       onRefresh();
     }
   };

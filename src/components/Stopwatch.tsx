@@ -6,7 +6,11 @@ import { notificationService } from '@/lib/notifications';
 import { sirenService } from '@/lib/siren';
 import { cn } from '@/lib/utils';
 
-export const Stopwatch = () => {
+interface StopwatchProps {
+  onTaskSaved?: () => void;
+}
+
+export const Stopwatch = ({ onTaskSaved }: StopwatchProps) => {
   const {
     isRunning,
     elapsedSeconds,
@@ -34,12 +38,16 @@ export const Stopwatch = () => {
     start();
   };
 
-  const handleStop = () => {
-    const task = stop();
+  const handleStop = async () => {
+    const task = await stop();
     if (task) {
       // Reset task fields for next task
       setTaskName('');
       setTaskNotes('');
+      // Trigger refresh of task list
+      if (onTaskSaved) {
+        onTaskSaved();
+      }
     }
   };
 

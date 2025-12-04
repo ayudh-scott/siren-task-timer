@@ -14,7 +14,7 @@ export interface UseTimerReturn {
   setTaskName: (name: string) => void;
   setTaskNotes: (notes: string) => void;
   start: () => void;
-  stop: () => Task | null;
+  stop: () => Promise<Task | null>;
   reset: () => void;
   lastAlertMinutes: number;
 }
@@ -104,7 +104,7 @@ export const useTimer = (): UseTimerReturn => {
     notificationService.showTimerStarted();
   }, []);
 
-  const stop = useCallback((): Task | null => {
+  const stop = useCallback(async (): Promise<Task | null> => {
     if (!isRunning) return null;
 
     const endTime = new Date();
@@ -122,7 +122,7 @@ export const useTimer = (): UseTimerReturn => {
     };
 
     console.log('Saving task:', task);
-    storage.saveTask(task);
+    await storage.saveTask(task);
     storage.clearTimerState();
 
     setIsRunning(false);

@@ -14,7 +14,44 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      tasks: {
+        Row: {
+          id: string
+          date: string
+          task_name: string
+          notes: string
+          start_time: string
+          end_time: string
+          duration: number
+          created_at: number
+          user_id: string | null
+          created_at_timestamp: string | null
+        }
+        Insert: {
+          id: string
+          date: string
+          task_name: string
+          notes?: string
+          start_time: string
+          end_time: string
+          duration: number
+          created_at: number
+          user_id?: string | null
+          created_at_timestamp?: string | null
+        }
+        Update: {
+          id?: string
+          date?: string
+          task_name?: string
+          notes?: string
+          start_time?: string
+          end_time?: string
+          duration?: number
+          created_at?: number
+          user_id?: string | null
+          created_at_timestamp?: string | null
+        }
+      }
     }
     Views: {
       [_ in never]: never
